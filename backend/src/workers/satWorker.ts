@@ -1,17 +1,26 @@
 import { Worker } from "bullmq"
 import "dotenv/config"
+import solve from "../sat/solve.js"
 
 const worker = new Worker(
   "sat-jobs",
   async (job) => {
     console.log("Processing job:", job.id)
-    console.log("Formula:", job.data.formula)
+
+    const formula = job.data.formula
+
+    const solution = solve(formula)
+
+    console.log("Solution:", solution)
+
+    return solution
   },
   {
     connection: {
       host: process.env.REDIS_HOST,
       port: Number(process.env.REDIS_PORT),
     },
+    concurrency: 2,
   },
 )
 

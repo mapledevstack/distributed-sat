@@ -1,7 +1,7 @@
 import type { Request, Response } from "express"
 import { AppError, catchErrors } from "../middlewares/index.js"
-import { solveSchema } from "../schemas/solve.schema.js"
-import { solveFormula } from "../services/solve.service.js"
+import { solveJobSchema, solveSchema } from "../schemas/solve.schema.js"
+import { getSolveJob, solveFormula } from "../services/solve.service.js"
 
 export const solveController = catchErrors(
   async (req: Request, res: Response) => {
@@ -16,3 +16,15 @@ export const solveController = catchErrors(
     res.json(solution)
   },
 )
+
+export const getSolveController = async (req: Request, res: Response) => {
+  const { jobId } = solveJobSchema.parse(req.params)
+
+  const job = await getSolveJob(jobId)
+
+  if (!job) {
+    throw new AppError("Job not found", 404)
+  }
+
+  res.json(job)
+}

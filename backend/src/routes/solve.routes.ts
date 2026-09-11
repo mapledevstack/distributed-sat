@@ -1,8 +1,12 @@
 import { Router } from "express"
-import { solveController } from "../controllers/solve.controller.js"
+import {
+  getSolveController,
+  solveController,
+} from "../controllers/solve.controller.js"
 
 const router = Router()
 
 router.post("/solve", solveController)
+router.get("/solve/:jobId", getSolveController)
 
 export default router
