@@ -1,10 +1,12 @@
-import solve from "../sat/solve.js"
 import type { Formula } from "../sat/types.js"
+import { satQueue } from "../queue/satQueue.js"
 
-export const solveFormula = (formula: Formula) => {
-  const solution = solve(formula)
+export const solveFormula = async (formula: Formula) => {
+  const job = await satQueue.add("solve", {
+    formula,
+  })
 
   return {
-    solution,
+    jobId: job.id,
   }
 }
