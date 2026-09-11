@@ -3,3 +3,17 @@ services:
     image: redis:7
     ports:
       - "6379:6379"
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: distributed_sat
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
