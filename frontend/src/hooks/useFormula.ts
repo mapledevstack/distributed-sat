@@ -70,7 +70,10 @@ export const useFormula = (initialFormula: Formula = DEFAULT_FORMULA) => {
   }
 
   const addClause = (defaultLiteral = "A") => {
-    setFormula((prev) => [...prev, [defaultLiteral]])
+    const literal =
+      typeof defaultLiteral === "string" && defaultLiteral ? defaultLiteral : "A"
+
+    setFormula((prev) => [...prev, [literal]])
   }
 
   const removeClause = (clauseIndex: number) => {
@@ -93,8 +96,8 @@ export const useFormula = (initialFormula: Formula = DEFAULT_FORMULA) => {
     })
   }
 
-  const randomizeFormula = () => {
-    setFormula(randomFormula(3, 3, 4))
+  const randomizeFormula = (clauseCount?: number, variableCount?: number) => {
+    setFormula(randomFormula(clauseCount, 3, variableCount))
   }
 
   return {

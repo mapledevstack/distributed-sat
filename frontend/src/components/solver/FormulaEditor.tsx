@@ -1,3 +1,5 @@
+import { useState } from "react"
+
 import {
   ArrowClockwise,
   DiceFive,
@@ -33,7 +35,7 @@ type FormulaEditorProps = {
   onAddClause: () => void
   onRemoveClause: (clauseIndex: number) => void
   onRandomizeClause: (clauseIndex: number) => void
-  onRandomizeFormula: () => void
+  onRandomizeFormula: (clauseCount?: number, variableCount?: number) => void
   onReset: () => void
   onSolve: () => void
 }
@@ -57,6 +59,12 @@ export const FormulaEditor = ({
   const variables = collectFormulaVariables(formula)
   const totalAssignments = countAssignments(formula)
   const estimatedChunks = Math.max(1, Math.ceil(totalAssignments / chunkSize))
+
+  const [randomClauseCount, setRandomClauseCount] = useState(3)
+  const [randomVariableCount, setRandomVariableCount] = useState(8)
+
+  const clampInt = (raw: string, fallback: number, min: number, max: number) =>
+    Math.max(min, Math.min(max, Number(raw) || fallback))
 
   return (
     <section className="border bg-card p-5 sm:p-6">
@@ -115,7 +123,12 @@ export const FormulaEditor = ({
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-2 border border-dashed bg-muted/30 p-3">
-        <Button variant="outline" size="sm" onClick={onAddClause} disabled={isSolving}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onAddClause()}
+          disabled={isSolving}
+        >
           <Plus size={14} weight="bold" />
           Add Clause
         </Button>
@@ -123,12 +136,52 @@ export const FormulaEditor = ({
         <Button
           variant="outline"
           size="sm"
-          onClick={onRandomizeFormula}
+          onClick={() => onRandomizeFormula(randomClauseCount, randomVariableCount)}
           disabled={isSolving}
+          title="Generate a random 3-SAT formula — always 3 literals per clause — using the clauses and vars below"
         >
           <DiceFive size={14} />
           Random 3-SAT
         </Button>
+
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <label
+            htmlFor="random-clauses"
+            className="font-medium whitespace-nowrap"
+          >
+            Clauses
+          </label>
+          <input
+            id="random-clauses"
+            type="number"
+            min={1}
+            max={40}
+            value={randomClauseCount}
+            disabled={isSolving}
+            title="How many clauses (AND rows) the random formula gets"
+            onChange={(event) =>
+              setRandomClauseCount(clampInt(event.target.value, 3, 1, 40))
+            }
+            className="h-7 w-14 border bg-background px-2 font-mono text-xs outline-none focus:border-ring disabled:opacity-60"
+          />
+
+          <label htmlFor="random-vars" className="font-medium whitespace-nowrap">
+            Vars
+          </label>
+          <input
+            id="random-vars"
+            type="number"
+            min={2}
+            max={24}
+            value={randomVariableCount}
+            disabled={isSolving}
+            title="How many distinct variables — each extra variable doubles the assignment space (2ⁿ)"
+            onChange={(event) =>
+              setRandomVariableCount(clampInt(event.target.value, 8, 2, 24))
+            }
+            className="h-7 w-14 border bg-background px-2 font-mono text-xs outline-none focus:border-ring disabled:opacity-60"
+          />
+        </div>
 
         <Button
           variant="ghost"
