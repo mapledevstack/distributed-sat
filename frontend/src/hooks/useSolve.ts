@@ -33,6 +33,11 @@ export const useSolve = () => {
     },
   })
 
+  const startSolve = (formula: Formula) => {
+    solveMutation.reset()
+    solveMutation.mutate(formula)
+  }
+
   const jobQuery = useQuery<SolveJob, Error>({
     queryKey: ["solve-job", jobId],
     queryFn: () => getSolveJob(jobId ?? ""),
@@ -67,6 +72,7 @@ export const useSolve = () => {
     jobQuery,
     liveJob,
     isSolving,
+    startSolve,
   }
 }
 

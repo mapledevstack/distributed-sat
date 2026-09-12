@@ -9,6 +9,7 @@ import { enqueueSatChunk } from "../queue/satQueue.js"
 import {
   hashAndBuildCacheKeys,
   readCachedSatResult,
+  releaseSolveLock,
   tryAcquireSolveLock,
 } from "../utils/satCache.js"
 import {
@@ -38,22 +39,27 @@ export const solveFormula = async (
     return returnDuplicateSearch()
   }
 
-  const jobId = crypto.randomUUID()
-  const totalAssignments = countTotalAssignments(formula)
-  const chunkSize = requestedChunkSize ?? pickChunkSize(totalAssignments)
-  const chunks = splitSearchSpace(totalAssignments, chunkSize)
+  try {
+    const jobId = crypto.randomUUID()
+    const totalAssignments = countTotalAssignments(formula)
+    const chunkSize = requestedChunkSize ?? pickChunkSize(totalAssignments)
+    const chunks = splitSearchSpace(totalAssignments, chunkSize)
 
-  await createQueuedParentJob({
-    jobId,
-    formula,
-    formulaHash,
-    totalChunks: chunks.length,
-    totalAssignments,
-    chunkSize,
-  })
-  await enqueueAllChunks(jobId, formula, chunks)
+    await createQueuedParentJob({
+      jobId,
+      formula,
+      formulaHash,
+      totalChunks: chunks.length,
+      totalAssignments,
+      chunkSize,
+    })
+    await enqueueAllChunks(jobId, formula, chunks)
 
-  return { cached: false, jobId, totalChunks: chunks.length, chunkSize }
+    return { cached: false, jobId, totalChunks: chunks.length, chunkSize }
+  } catch (error) {
+    await releaseSolveLock(solveLockKey)
+    throw error
+  }
 }
 
 const returnCachedResult = (cachedResult: string) => ({
@@ -72,27 +78,32 @@ const enqueueAllChunks = async (
   formula: Formula,
   chunks: SearchChunk[],
 ): Promise<void> => {
-  const chunkRanges = await enqueueChunkJobs(jobId, formula, chunks)
+  const chunkRanges = buildChunkRanges(chunks)
 
   await createChunkRows(jobId, chunkRanges)
+  await enqueueChunkJobs(jobId, formula, chunks, chunkRanges)
 }
+
+const buildChunkRanges = (
+  chunks: SearchChunk[],
+): Array<{ start: number; end: number; chunkJobId: string }> =>
+  chunks.map(({ start, end }) => ({
+    start,
+    end,
+    chunkJobId: crypto.randomUUID(),
+  }))
 
 const enqueueChunkJobs = async (
   jobId: string,
   formula: Formula,
   chunks: SearchChunk[],
-): Promise<Array<{ start: number; end: number; chunkJobId: string }>> => {
-  const chunkRanges: Array<{ start: number; end: number; chunkJobId: string }> =
-    []
-
+  chunkRanges: Array<{ start: number; end: number; chunkJobId: string }>,
+): Promise<void> => {
   for (const [chunkIndex, { start, end }] of chunks.entries()) {
-    const chunkId = crypto.randomUUID()
-    await enqueueSatChunk({ jobId, chunkId, chunkIndex, formula, start, end })
+    const { chunkJobId } = chunkRanges[chunkIndex]
 
-    chunkRanges.push({ start, end, chunkJobId: chunkId })
+    await enqueueSatChunk({ jobId, chunkId: chunkJobId, chunkIndex, formula, start, end })
   }
-
-  return chunkRanges
 }
 
 export const getSolveJob = async (jobId: string) => {

@@ -26,10 +26,11 @@ const App = () => {
     jobQuery,
     liveJob,
     isSolving,
+    startSolve,
   } = useSolve()
 
   const handleSolve = () => {
-    solveMutation.mutate(formula)
+    startSolve(formula)
   }
 
   return (

@@ -68,6 +68,7 @@ const processSatChunk = async (
     return null
   } catch (error) {
     await failParentJob(parentJobId, error)
+    await releaseSolveLock(hashAndBuildCacheKeys(formula).solveLockKey)
     throw error
   }
 }

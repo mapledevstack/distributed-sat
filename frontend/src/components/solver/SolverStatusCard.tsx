@@ -56,17 +56,6 @@ export const resolveDisplayStatus = (
   liveJob: SolveJob | undefined,
   isSolving: boolean,
 ): DisplayStatus => {
-  const mutationData = mutation.data
-
-  if (
-    mutationData &&
-    !mutationData.cached &&
-    "duplicate" in mutationData &&
-    mutationData.duplicate
-  ) {
-    return "duplicate"
-  }
-
   if (cachedOutcome) {
     return isUnsatisfiableValue(cachedOutcome.result)
       ? "unsatisfiable"
@@ -87,6 +76,16 @@ export const resolveDisplayStatus = (
 
   if (isSolving || liveJob) {
     return "solving"
+  }
+
+  const mutationData = mutation.data
+  if (
+    mutationData &&
+    !mutationData.cached &&
+    "duplicate" in mutationData &&
+    mutationData.duplicate
+  ) {
+    return "duplicate"
   }
 
   return "idle"
