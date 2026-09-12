@@ -1,43 +1,94 @@
-type SolverStatus = "idle" | "solving" | "completed" | "failed"
+import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query"
 
-type SolverStatusCardProps = {
-  status?: SolverStatus
-  message?: string
+import type { Formula } from "@/types/formula.ts"
+import type {
+  Assignment,
+  SolveJob,
+  SolveResponse,
+} from "@/types/solve.ts"
+
+export type SolverDashboardProps = {
+  mutation: UseMutationResult<SolveResponse, Error, Formula>
+  query: UseQueryResult<SolveJob, Error>
+  cachedOutcome?: SolveResponse & { cached: true }
+  liveJob?: SolveJob
+  isSolving: boolean
 }
 
-const STATUS_LABEL: Record<SolverStatus, string> = {
-  idle: "Idle",
-  solving: "Solving",
-  completed: "Completed",
-  failed: "Failed",
+export type DisplayStatus =
+  | "idle"
+  | "solving"
+  | "completed"
+  | "unsatisfiable"
+  | "failed"
+  | "duplicate"
+
+export const STATUS_HEADLINE: Record<DisplayStatus, string> = {
+  idle: "Ready when you are",
+  solving: "Workers are sweeping the search space",
+  completed: "Satisfying assignment found",
+  unsatisfiable: "Formula is unsatisfiable",
+  failed: "Something went wrong",
+  duplicate: "Already being solved",
 }
 
-const STATUS_MESSAGE: Record<SolverStatus, string> = {
-  idle: "No solve has been started yet.",
-  solving: "Workers are searching the assignment space…",
-  completed: "A satisfying assignment was found.",
-  failed: "The solve failed. Check the formula and try again.",
+export const STATUS_SUB: Record<DisplayStatus, string> = {
+  idle: "Press Solve to fan work out to every chunk below.",
+  solving: "Live progress streams in from Postgres as each chunk finishes.",
+  completed: "At least one chunk reported a full satisfying assignment.",
+  unsatisfiable: "Every chunk was exhausted — no assignment satisfies it.",
+  failed: "Check the backend, Redis and Postgres, then try again.",
+  duplicate: "This exact formula already has an active search running.",
 }
 
-export const SolverStatusCard = ({
-  status = "idle",
-  message,
-}: SolverStatusCardProps) => {
-  return (
-    <section className="mt-6 rounded-xl border bg-card p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="font-semibold">Solver Status</h2>
+export const isUnsatisfiableValue = (
+  value: Assignment | { status: string },
+): value is { status: "unsatisfiable" } =>
+  typeof value === "object" &&
+  value !== null &&
+  "status" in value &&
+  (value as { status: string }).status === "unsatisfiable"
 
-          <p className="mt-1 text-sm text-muted-foreground">
-            {message ?? STATUS_MESSAGE[status]}
-          </p>
-        </div>
+export const resolveDisplayStatus = (
+  mutation: SolverDashboardProps["mutation"],
+  query: SolverDashboardProps["query"],
+  cachedOutcome: SolverDashboardProps["cachedOutcome"],
+  liveJob: SolveJob | undefined,
+  isSolving: boolean,
+): DisplayStatus => {
+  const mutationData = mutation.data
 
-        <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium">
-          {STATUS_LABEL[status]}
-        </span>
-      </div>
-    </section>
-  )
+  if (
+    mutationData &&
+    !mutationData.cached &&
+    "duplicate" in mutationData &&
+    mutationData.duplicate
+  ) {
+    return "duplicate"
+  }
+
+  if (cachedOutcome) {
+    return isUnsatisfiableValue(cachedOutcome.result)
+      ? "unsatisfiable"
+      : "completed"
+  }
+
+  if (mutation.isError || query.isError || liveJob?.status === "failed") {
+    return "failed"
+  }
+
+  if (liveJob?.status === "completed") {
+    return "completed"
+  }
+
+  if (liveJob?.status === "unsatisfiable") {
+    return "unsatisfiable"
+  }
+
+  if (isSolving || liveJob) {
+    return "solving"
+  }
+
+  return "idle"
 }
+
