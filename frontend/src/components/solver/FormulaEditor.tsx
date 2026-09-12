@@ -1,63 +1,199 @@
+import {
+  ArrowClockwise,
+  DiceFive,
+  Play,
+  Plus,
+  SlidersHorizontal,
+} from "@phosphor-icons/react"
+
 import { Button } from "@/components/ui/button.tsx"
-import type { Formula } from "@/types/formula.ts"
+import {
+  collectFormulaVariables,
+  countAssignments,
+  type Formula,
+} from "@/types/formula.ts"
+import { formatInteger } from "@/lib/format.ts"
+import { cn } from "@/lib/utils.ts"
 
 import { ClauseRow } from "./ClauseRow.tsx"
 
 type FormulaEditorProps = {
   formula: Formula
-  onUpdateLiteral: (
+  isSolving: boolean
+  chunkSize: number
+  onChunkSizeChange: (value: number) => void
+  onVariableChange: (
     clauseIndex: number,
     literalIndex: number,
     value: string,
   ) => void
+  onToggleNegation: (clauseIndex: number, literalIndex: number) => void
   onAddLiteral: (clauseIndex: number) => void
   onRemoveLiteral: (clauseIndex: number, literalIndex: number) => void
   onAddClause: () => void
   onRemoveClause: (clauseIndex: number) => void
+  onRandomizeClause: (clauseIndex: number) => void
+  onRandomizeFormula: () => void
+  onReset: () => void
   onSolve: () => void
 }
 
 export const FormulaEditor = ({
   formula,
-  onUpdateLiteral,
+  isSolving,
+  chunkSize,
+  onChunkSizeChange,
+  onVariableChange,
+  onToggleNegation,
   onAddLiteral,
   onRemoveLiteral,
   onAddClause,
   onRemoveClause,
+  onRandomizeClause,
+  onRandomizeFormula,
+  onReset,
   onSolve,
 }: FormulaEditorProps) => {
-  return (
-    <section className="rounded-xl border bg-card p-6 shadow-sm">
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold">Boolean Formula</h2>
+  const variables = collectFormulaVariables(formula)
+  const totalAssignments = countAssignments(formula)
+  const estimatedChunks = Math.max(1, Math.ceil(totalAssignments / chunkSize))
 
-        <p className="mt-1 text-sm text-muted-foreground">
-          Each row is a clause. Literals inside a row are combined with OR,
-          while clauses are combined with AND.
-        </p>
+  return (
+    <section className="border bg-card p-5 sm:p-6">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="font-heading text-xl font-semibold">
+            Boolean Formula
+          </h2>
+
+          <p className="mt-1 max-w-lg text-sm text-muted-foreground">
+            Each row is a clause — literals join with OR, clauses join with AND.
+            Type one letter per box, click{" "}
+            <span className="font-mono font-bold text-foreground">¬</span> to
+            flip negation.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="border bg-muted px-2 py-0.5 font-mono text-xs font-semibold">
+            {variables.length === 0 ? "no vars" : variables.join(" · ")}
+          </span>
+
+          <span className="bg-primary px-2 py-0.5 font-mono text-xs font-bold text-primary-foreground">
+            2<sup>{variables.length}</sup> = {formatInteger(totalAssignments)}{" "}
+            assignments
+          </span>
+        </div>
       </div>
 
       <div className="space-y-3">
         {formula.map((clause, clauseIndex) => (
-          <ClauseRow
-            key={clauseIndex}
-            clause={clause}
-            clauseIndex={clauseIndex}
-            onUpdateLiteral={onUpdateLiteral}
-            onAddLiteral={onAddLiteral}
-            onRemoveLiteral={onRemoveLiteral}
-            onRemoveClause={onRemoveClause}
-          />
+          <div key={clauseIndex} className="relative">
+            {clauseIndex > 0 && (
+              <div className="flex items-center gap-2 py-1 pl-3">
+                <span className="h-px w-6 bg-border" />
+                <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-bold tracking-widest text-muted-foreground">
+                  AND
+                </span>
+                <span className="h-px flex-1 bg-border" />
+              </div>
+            )}
+
+            <ClauseRow
+              clause={clause}
+              clauseIndex={clauseIndex}
+              isSolving={isSolving}
+              onVariableChange={onVariableChange}
+              onToggleNegation={onToggleNegation}
+              onAddLiteral={onAddLiteral}
+              onRemoveLiteral={onRemoveLiteral}
+              onRemoveClause={onRemoveClause}
+              onRandomizeClause={onRandomizeClause}
+            />
+          </div>
         ))}
       </div>
 
-      <div className="mt-6 flex items-center gap-3">
-        <Button variant="outline" onClick={onAddClause}>
-          + Add Clause
+      <div className="mt-5 flex flex-wrap items-center gap-2 border border-dashed bg-muted/30 p-3">
+        <Button variant="outline" size="sm" onClick={onAddClause} disabled={isSolving}>
+          <Plus size={14} weight="bold" />
+          Add Clause
         </Button>
 
-        <Button onClick={onSolve}>Solve</Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onRandomizeFormula}
+          disabled={isSolving}
+        >
+          <DiceFive size={14} />
+          Random 3-SAT
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onReset}
+          disabled={isSolving}
+          className="text-muted-foreground"
+        >
+          <ArrowClockwise size={14} />
+          Reset
+        </Button>
+
+        <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+          <SlidersHorizontal size={14} />
+          <label htmlFor="chunk-size" className="font-medium whitespace-nowrap">
+            Chunk size
+          </label>
+          <input
+            id="chunk-size"
+            type="number"
+            min={1}
+            max={4096}
+            value={chunkSize}
+            disabled={isSolving}
+            onChange={(event) =>
+              onChunkSizeChange(Math.max(1, Number(event.target.value) || 1))
+            }
+            className="h-7 w-20 border bg-background px-2 font-mono text-xs outline-none focus:border-ring disabled:opacity-60"
+          />
+          <span
+            className={cn(
+              "px-2 py-0.5 font-mono text-[11px] font-semibold",
+              estimatedChunks > 64
+                ? "bg-destructive/10 text-destructive"
+                : "bg-muted text-muted-foreground",
+            )}
+            title="How many worker chunks this formula will be split into"
+          >
+            ≈ {estimatedChunks} chunks
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <Button
+          size="lg"
+          onClick={onSolve}
+          disabled={isSolving}
+          className="w-full font-semibold"
+        >
+          {isSolving ? (
+            <>
+              <span className="size-4 animate-spin border-2 border-current border-t-transparent" />
+              Solving… watch workers below
+            </>
+          ) : (
+            <>
+              <Play size={15} weight="fill" />
+              Solve across {estimatedChunks} worker
+              {estimatedChunks === 1 ? "" : "s"}
+            </>
+          )}
+        </Button>
       </div>
     </section>
   )
 }
+

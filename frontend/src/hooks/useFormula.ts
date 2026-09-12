@@ -1,21 +1,51 @@
 import { useState } from "react"
 
-import { DEFAULT_FORMULA, type Formula } from "@/types/formula.ts"
+import {
+  collectFormulaVariables,
+  DEFAULT_FORMULA,
+  normalizeVariableInput,
+  randomClause,
+  randomFormula,
+  toggleLiteralNegation,
+  type Formula,
+} from "@/types/formula.ts"
 
 export const useFormula = (initialFormula: Formula = DEFAULT_FORMULA) => {
   const [formula, setFormula] = useState<Formula>(initialFormula)
 
-  const updateLiteral = (
+  const updateVariable = (
     clauseIndex: number,
     literalIndex: number,
-    value: string,
+    rawValue: string,
   ) => {
+    const variable = normalizeVariableInput(rawValue)
+
+    setFormula((prev) =>
+      prev.map((clause, index) =>
+        index !== clauseIndex
+          ? clause
+          : clause.map((literal, index) => {
+              if (index !== literalIndex) {
+                return literal
+              }
+
+              if (!variable) {
+                return literal
+              }
+
+              return literal.startsWith("!") ? `!${variable}` : variable
+            }),
+      ),
+    )
+  }
+
+  const toggleNegation = (clauseIndex: number, literalIndex: number) => {
     setFormula((prev) =>
       prev.map((clause, index) =>
         index !== clauseIndex
           ? clause
           : clause.map((literal, index) =>
-              index === literalIndex ? value : literal,
+              index === literalIndex ? toggleLiteralNegation(literal) : literal,
             ),
       ),
     )
@@ -47,13 +77,38 @@ export const useFormula = (initialFormula: Formula = DEFAULT_FORMULA) => {
     setFormula((prev) => prev.filter((_, index) => index !== clauseIndex))
   }
 
+  const resetFormula = () => {
+    setFormula(DEFAULT_FORMULA)
+  }
+
+  const randomizeClause = (clauseIndex: number) => {
+    setFormula((prev) => {
+      const variables = collectFormulaVariables(prev)
+
+      return prev.map((clause, index) =>
+        index !== clauseIndex
+          ? clause
+          : randomClause(Math.max(clause.length, 2), variables),
+      )
+    })
+  }
+
+  const randomizeFormula = () => {
+    setFormula(randomFormula(3, 3, 4))
+  }
+
   return {
     formula,
     setFormula,
-    updateLiteral,
+    updateVariable,
+    toggleNegation,
     addLiteral,
     removeLiteral,
     addClause,
     removeClause,
+    resetFormula,
+    randomizeClause,
+    randomizeFormula,
   }
 }
+
