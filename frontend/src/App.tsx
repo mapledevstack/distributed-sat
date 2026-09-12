@@ -1,21 +1,42 @@
-import { Button } from "@/components/ui/button"
+import { AppHeader } from "@/components/solver/AppHeader.tsx"
+import { FormulaEditor } from "@/components/solver/FormulaEditor.tsx"
+import { SolverStatusCard } from "@/components/solver/SolverStatusCard.tsx"
+import { useFormula } from "@/hooks/useFormula.ts"
 
-export function App() {
+const App = () => {
+  const {
+    formula,
+    updateLiteral,
+    addLiteral,
+    removeLiteral,
+    addClause,
+    removeClause,
+  } = useFormula()
+
+  const handleSolve = () => {
+    console.log("Solving formula:", formula)
+  }
+
   return (
-    <div className="flex min-h-svh p-6">
-      <div className="flex max-w-md min-w-0 flex-col gap-4 text-sm leading-loose">
-        <div>
-          <h1 className="font-medium">Project ready!</h1>
-          <p>You may now add components and start building.</p>
-          <p>We&apos;ve already added the button component for you.</p>
-          <Button className="mt-2">Button</Button>
-        </div>
-        <div className="font-mono text-xs text-muted-foreground">
-          (Press <kbd>d</kbd> to toggle dark mode)
-        </div>
+    <main className="min-h-screen bg-background">
+      <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col px-6 py-12">
+        <AppHeader />
+
+        <FormulaEditor
+          formula={formula}
+          onUpdateLiteral={updateLiteral}
+          onAddLiteral={addLiteral}
+          onRemoveLiteral={removeLiteral}
+          onAddClause={addClause}
+          onRemoveClause={removeClause}
+          onSolve={handleSolve}
+        />
+
+        <SolverStatusCard />
       </div>
-    </div>
+    </main>
   )
 }
 
 export default App
+
