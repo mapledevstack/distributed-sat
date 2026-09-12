@@ -1,77 +1,115 @@
-import { Worker } from "bullmq"
+import { Worker, type Job } from "bullmq"
 import "dotenv/config"
 
-import solve from "../sat/solve.js"
+import { solveChunk } from "../sat/solve.js"
+import type { Assignment, Formula } from "../sat/types.js"
 
-import { jobs } from "../db/schema.js"
-import { db } from "../db/index.js"
-import { eq } from "drizzle-orm"
-import { hashFormula } from "../utils/hash.js"
-import { redis } from "../redis.js"
+import { getRedisConnection } from "../queue/redisConnection.js"
+import { SAT_QUEUE_NAME, type SatChunkJobData } from "../queue/satQueue.js"
+import {
+  cacheSatSolution,
+  cacheSatUnsatisfiable,
+  hashAndBuildCacheKeys,
+} from "../utils/satCache.js"
+import {
+  completeParentJobAsUnsatisfiable,
+  completeParentJobWithSolution,
+  failParentJob,
+  isSearchExhausted,
+  markParentJobProcessing,
+  recordChunkCompleted,
+  type ChunkProgress,
+} from "../services/satJobStore.js"
 
-const worker = new Worker(
-  "sat-jobs",
-  async (job) => {
-    console.log("Processing job:", job.id)
+type SatChunkJob = Job<SatChunkJobData>
 
-    await db
-      .update(jobs)
-      .set({
-        status: "processing",
-      })
-      .where(eq(jobs.id, job.id!))
+const SAT_WORKER_CONCURRENCY = 2
 
-    const formula = job.data.formula
-    const formulaHash = hashFormula(formula)
+const processSatChunk = async (job: SatChunkJob): Promise<Assignment | null> => {
+  const { jobId: parentJobId, formula, start, end } = job.data
 
-    const cacheKey = `sat:result:${formulaHash}`
-    const lockKey = `sat:lock:${formulaHash}`
+  logChunkStarted(job)
+  await markParentJobProcessing(parentJobId)
 
-    try {
-      const solution = solve(formula)
+  try {
+    const solution = solveChunkInRange(formula, start, end)
+    const progress = await recordChunkCompleted(parentJobId)
 
-      await redis.set(cacheKey, JSON.stringify(solution))
-
-      await db
-        .update(jobs)
-        .set({
-          status: "completed",
-          result: solution,
-          completedAt: new Date(),
-        })
-        .where(eq(jobs.id, job.id!))
-
-      await redis.del(lockKey)
-
+    if (solution !== null) {
+      await publishSatisfyingAssignment(formula, parentJobId, solution)
       return solution
-    } catch (error) {
-      await db
-        .update(jobs)
-        .set({
-          status: "failed",
-          error: error instanceof Error ? error.message : "Unknown error",
-          completedAt: new Date(),
-        })
-        .where(eq(jobs.id, job.id!))
-
-      await redis.del(lockKey)
-
-      throw error
     }
-  },
+
+    await finalizeIfSearchExhausted(formula, parentJobId, progress)
+
+    return null
+  } catch (error) {
+    await failParentJob(parentJobId, error)
+    throw error
+  }
+}
+
+const solveChunkInRange = (
+  formula: Formula,
+  start: number,
+  end: number,
+): Assignment | null => solveChunk(formula, start, end)
+
+const publishSatisfyingAssignment = async (
+  formula: Formula,
+  parentJobId: string,
+  solution: Assignment,
+): Promise<void> => {
+  const { resultCacheKey } = hashAndBuildCacheKeys(formula)
+
+  await cacheSatSolution(resultCacheKey, solution)
+  await completeParentJobWithSolution(parentJobId, solution)
+}
+
+const finalizeIfSearchExhausted = async (
+  formula: Formula,
+  parentJobId: string,
+  progress: ChunkProgress,
+): Promise<void> => {
+  if (!isSearchExhausted(progress)) {
+    return
+  }
+
+  const { resultCacheKey } = hashAndBuildCacheKeys(formula)
+
+  await cacheSatUnsatisfiable(resultCacheKey)
+  await completeParentJobAsUnsatisfiable(parentJobId)
+}
+
+const describeChunk = (job: Pick<SatChunkJob, "id" | "data">): string => {
+  const { start, end } = job.data
+
+  return `${job.id}: ${start} → ${end}`
+}
+
+const logChunkStarted = (job: SatChunkJob): void => {
+  console.log(`Processing job ${describeChunk(job)}`)
+}
+
+export const worker = new Worker<SatChunkJobData>(
+  SAT_QUEUE_NAME,
+  processSatChunk,
   {
-    connection: {
-      host: process.env.REDIS_HOST,
-      port: Number(process.env.REDIS_PORT),
-    },
-    concurrency: 2,
+    connection: getRedisConnection(),
+    concurrency: SAT_WORKER_CONCURRENCY,
   },
 )
 
 worker.on("completed", (job) => {
-  console.log("Job completed:", job.id)
+  console.log(`Job completed ${describeChunk(job)}`)
 })
 
 worker.on("failed", (job, error) => {
-  console.error("Job failed:", job?.id, error)
+  if (job) {
+    console.error(`Job failed ${describeChunk(job)}`, error)
+    return
+  }
+
+  console.error("Job failed", error)
 })
+

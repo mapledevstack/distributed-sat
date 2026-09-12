@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import evaluateFormula from "../src/sat/evaluate.js"
-import solve from "../src/sat/solve.js"
+import solve, { solveChunk } from "../src/sat/solve.js"
 import type { Formula } from "../src/sat/types.js"
 
 describe("solve", () => {
@@ -91,6 +91,69 @@ describe("solve", () => {
 
     expect(result).not.toBeNull()
     expect(evaluateFormula(formula, result!)).toBe(true)
+  })
+})
+
+describe("solveChunk", () => {
+  it("should find the solution when it lies inside the chunk", () => {
+    // Variables in insertion order: A = bit 0, B = bit 1.
+    // mask 0 -> { A: false, B: false }, mask 1 -> { A: true, B: false }, ...
+    const formula: Formula = [["A", "B"]]
+
+    expect(solveChunk(formula, 0, 4)).toEqual({ A: true, B: false })
+  })
+
+  it("should return null when the only satisfying assignment is outside the chunk", () => {
+    // [["A"], ["B"]] is only satisfied by mask 3 -> { A: true, B: true }.
+    const formula: Formula = [["A"], ["B"]]
+
+    expect(solveChunk(formula, 0, 3)).toBeNull()
+    expect(solveChunk(formula, 3, 4)).toEqual({ A: true, B: true })
+  })
+
+  it("should treat end as exclusive", () => {
+    // mask 0 -> { A: false } (fails), mask 1 -> { A: true } (satisfies).
+    expect(solveChunk([["A"]], 0, 1)).toBeNull()
+    expect(solveChunk([["A"]], 1, 2)).toEqual({ A: true })
+    expect(solveChunk([["A"]], 0, 2)).toEqual({ A: true })
+  })
+
+  it("should return null for an empty range", () => {
+    expect(solveChunk([["A"]], 1, 1)).toBeNull()
+    expect(solveChunk([["A"]], 2, 1)).toBeNull()
+  })
+
+  it("should return null for an unsatisfiable formula over the full range", () => {
+    const formula: Formula = [["A"], ["!A"]]
+
+    expect(solveChunk(formula, 0, 2)).toBeNull()
+  })
+
+  it("should return an empty assignment for an empty formula when the chunk is non-empty", () => {
+    expect(solveChunk([], 0, 1)).toEqual({})
+    expect(solveChunk([], 0, 0)).toBeNull()
+  })
+
+  it("should only return assignments that satisfy the formula", () => {
+    const formula: Formula = [
+      ["A", "B", "!C"],
+      ["!A", "C"],
+    ]
+
+    const result = solveChunk(formula, 0, 8)
+
+    expect(result).not.toBeNull()
+    expect(evaluateFormula(formula, result!)).toBe(true)
+  })
+
+  it("should partition the search space without missing a solution", () => {
+    const formula: Formula = [["A"], ["B"]]
+    const firstHalf = solveChunk(formula, 0, 2)
+    const secondHalf = solveChunk(formula, 2, 4)
+
+    expect(firstHalf).toBeNull()
+    expect(secondHalf).toEqual({ A: true, B: true })
+    expect(solve(formula)).toEqual(secondHalf)
   })
 })
 

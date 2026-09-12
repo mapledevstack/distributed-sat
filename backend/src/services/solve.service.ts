@@ -1,62 +1,67 @@
 import type { Formula } from "../sat/types.js"
-import { satQueue } from "../queue/satQueue.js"
-import { jobs } from "../db/schema.js"
+import { countTotalAssignments } from "../sat/variables.js"
+import { splitSearchSpace, type SearchChunk } from "../sat/chunks.js"
+import { enqueueSatChunk } from "../queue/satQueue.js"
+import {
+  hashAndBuildCacheKeys,
+  readCachedSatResult,
+  tryAcquireSolveLock,
+} from "../utils/satCache.js"
+import { createQueuedParentJob } from "./satJobStore.js"
+
 import { db } from "../db/index.js"
+import { jobs } from "../db/schema.js"
 import { eq } from "drizzle-orm"
-import { hashFormula } from "../utils/hash.js"
-import { redis } from "../redis.js"
+
+const SAT_CHUNK_SIZE = 8
 
 export const solveFormula = async (formula: Formula) => {
-  const jobId = crypto.randomUUID()
-  const formulaHash = hashFormula(formula)
+  const { formulaHash, resultCacheKey, solveLockKey } =
+    hashAndBuildCacheKeys(formula)
 
-  const cacheKey = `sat:result:${formulaHash}`
-  const cachedResult = await redis.get(cacheKey)
-
+  const cachedResult = await readCachedSatResult(resultCacheKey)
   if (cachedResult) {
-    return {
-      cached: true,
-      result: JSON.parse(cachedResult),
-    }
+    return returnCachedResult(cachedResult)
   }
 
-  const lockKey = `sat:lock:${formulaHash}`
-
-  const lockAcquired = await redis.set(lockKey, "1", "EX", 60, "NX")
-
-  if (!lockAcquired) {
-    return {
-      cached: false,
-      duplicate: true,
-      message: "This formula is already being solved",
-    }
+  const isNewSearch = await tryAcquireSolveLock(solveLockKey)
+  if (!isNewSearch) {
+    return returnDuplicateSearch()
   }
 
-  await db.insert(jobs).values({
-    id: jobId,
-    status: "queued",
+  const jobId = crypto.randomUUID()
+  const totalAssignments = countTotalAssignments(formula)
+  const chunks = splitSearchSpace(totalAssignments, SAT_CHUNK_SIZE)
+
+  await createQueuedParentJob({
+    jobId,
     formula,
     formulaHash,
+    totalChunks: chunks.length,
   })
+  await enqueueAllChunks(jobId, formula, chunks)
 
-  const job = await satQueue.add(
-    "solve",
-    {
-      formula,
-    },
-    {
-      jobId,
-      attempts: 3,
-      backoff: {
-        type: "exponential",
-        delay: 1000,
-      },
-    },
-  )
+  return { cached: false, jobId }
+}
 
-  return {
-    cached: false,
-    jobId: job.id,
+const returnCachedResult = (cachedResult: string) => ({
+  cached: true as const,
+  result: JSON.parse(cachedResult),
+})
+
+const returnDuplicateSearch = () => ({
+  cached: false as const,
+  duplicate: true as const,
+  message: "This formula is already being solved",
+})
+
+const enqueueAllChunks = async (
+  jobId: string,
+  formula: Formula,
+  chunks: SearchChunk[],
+): Promise<void> => {
+  for (const { start, end } of chunks) {
+    await enqueueSatChunk({ jobId, formula, start, end })
   }
 }
 
