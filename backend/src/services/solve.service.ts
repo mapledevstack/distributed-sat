@@ -20,6 +20,18 @@ export const solveFormula = async (formula: Formula) => {
     }
   }
 
+  const lockKey = `sat:lock:${formulaHash}`
+
+  const lockAcquired = await redis.set(lockKey, "1", "EX", 60, "NX")
+
+  if (!lockAcquired) {
+    return {
+      cached: false,
+      duplicate: true,
+      message: "This formula is already being solved",
+    }
+  }
+
   await db.insert(jobs).values({
     id: jobId,
     status: "queued",

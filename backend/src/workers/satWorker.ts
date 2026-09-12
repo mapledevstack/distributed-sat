@@ -21,11 +21,13 @@ const worker = new Worker(
       })
       .where(eq(jobs.id, job.id!))
 
-    try {
-      const formula = job.data.formula
-      const formulaHash = hashFormula(formula)
-      const cacheKey = `sat:result:${formulaHash}`
+    const formula = job.data.formula
+    const formulaHash = hashFormula(formula)
 
+    const cacheKey = `sat:result:${formulaHash}`
+    const lockKey = `sat:lock:${formulaHash}`
+
+    try {
       const solution = solve(formula)
 
       await redis.set(cacheKey, JSON.stringify(solution))
@@ -39,6 +41,8 @@ const worker = new Worker(
         })
         .where(eq(jobs.id, job.id!))
 
+      await redis.del(lockKey)
+
       return solution
     } catch (error) {
       await db
@@ -49,6 +53,8 @@ const worker = new Worker(
           completedAt: new Date(),
         })
         .where(eq(jobs.id, job.id!))
+
+      await redis.del(lockKey)
 
       throw error
     }
