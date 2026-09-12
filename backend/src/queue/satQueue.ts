@@ -6,6 +6,8 @@ import { getRedisConnection } from "./redisConnection.js"
 
 export interface SatChunkJobData {
   jobId: string
+  chunkId: string
+  chunkIndex: number
   formula: Formula
   start: number
   end: number

@@ -17,6 +17,8 @@ import {
   completeParentJobWithSolution,
   failParentJob,
   isSearchExhausted,
+  markChunkFinished,
+  markChunkStarted,
   markParentJobProcessing,
   recordChunkCompleted,
   type ChunkProgress,
@@ -25,25 +27,43 @@ import {
 type SatChunkJob = Job<SatChunkJobData>
 
 const SAT_WORKER_CONCURRENCY = 2
+const WORKER_ID =
+  process.env.WORKER_ID ??
+  `worker-${process.pid}-${crypto.randomUUID().slice(0, 8)}`
+
+const describeChunkRange = (start: number, end: number): string =>
+  `masks [${start}, ${end})`
 
 const processSatChunk = async (
   job: SatChunkJob,
 ): Promise<Assignment | null> => {
-  const { jobId: parentJobId, formula, start, end } = job.data
+  const {
+    jobId: parentJobId,
+    chunkId,
+    chunkIndex,
+    formula,
+    start,
+    end,
+  } = job.data
 
-  logChunkStarted(job)
+  logChunkStarted(chunkIndex, start, end)
   await markParentJobProcessing(parentJobId)
+  await markChunkStarted(chunkId, WORKER_ID)
 
   try {
     const solution = solveChunkInRange(formula, start, end)
     const progress = await recordChunkCompleted(parentJobId)
 
     if (solution !== null) {
+      await markChunkFinished(chunkId, "completed", solution)
       await publishSatisfyingAssignment(formula, parentJobId, solution)
+      logChunkSolved(chunkIndex, start, end)
       return solution
     }
 
+    await markChunkFinished(chunkId, "exhausted", null)
     await finalizeIfSearchExhausted(formula, parentJobId, progress)
+    logChunkExhausted(chunkIndex, start, end)
 
     return null
   } catch (error) {
@@ -86,14 +106,26 @@ const finalizeIfSearchExhausted = async (
   await releaseSolveLock(solveLockKey)
 }
 
-const describeChunk = (job: Pick<SatChunkJob, "id" | "data">): string => {
-  const { start, end } = job.data
-
-  return `${job.id}: ${start} → ${end}`
+const logChunkStarted = (chunkIndex: number, start: number, end: number) => {
+  console.log(
+    `[${WORKER_ID}] started chunk #${chunkIndex} ${describeChunkRange(start, end)}`,
+  )
 }
 
-const logChunkStarted = (job: SatChunkJob): void => {
-  console.log(`Processing job ${describeChunk(job)}`)
+const logChunkSolved = (chunkIndex: number, start: number, end: number) => {
+  console.log(
+    `[${WORKER_ID}] chunk #${chunkIndex} ${describeChunkRange(start, end)} found a solution`,
+  )
+}
+
+const logChunkExhausted = (
+  chunkIndex: number,
+  start: number,
+  end: number,
+) => {
+  console.log(
+    `[${WORKER_ID}] chunk #${chunkIndex} ${describeChunkRange(start, end)} exhausted`,
+  )
 }
 
 export const worker = new Worker<SatChunkJobData>(
@@ -106,14 +138,19 @@ export const worker = new Worker<SatChunkJobData>(
 )
 
 worker.on("completed", (job) => {
-  console.log(`Job completed ${describeChunk(job)}`)
+  console.log(
+    `[${WORKER_ID}] bullmq job ${job.id} (chunk #${job.data.chunkIndex}) completed`,
+  )
 })
 
 worker.on("failed", (job, error) => {
   if (job) {
-    console.error(`Job failed ${describeChunk(job)}`, error)
+    console.error(
+      `[${WORKER_ID}] bullmq job ${job.id} (chunk #${job.data.chunkIndex}) failed`,
+      error,
+    )
     return
   }
 
-  console.error("Job failed", error)
+  console.error(`[${WORKER_ID}] bullmq job failed`, error)
 })
