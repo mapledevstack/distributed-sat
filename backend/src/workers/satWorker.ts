@@ -6,6 +6,8 @@ import solve from "../sat/solve.js"
 import { jobs } from "../db/schema.js"
 import { db } from "../db/index.js"
 import { eq } from "drizzle-orm"
+import { hashFormula } from "../utils/hash.js"
+import { redis } from "../redis.js"
 
 const worker = new Worker(
   "sat-jobs",
@@ -21,8 +23,12 @@ const worker = new Worker(
 
     try {
       const formula = job.data.formula
+      const formulaHash = hashFormula(formula)
+      const cacheKey = `sat:result:${formulaHash}`
 
       const solution = solve(formula)
+
+      await redis.set(cacheKey, JSON.stringify(solution))
 
       await db
         .update(jobs)

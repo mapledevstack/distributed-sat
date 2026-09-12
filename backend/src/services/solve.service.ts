@@ -3,14 +3,28 @@ import { satQueue } from "../queue/satQueue.js"
 import { jobs } from "../db/schema.js"
 import { db } from "../db/index.js"
 import { eq } from "drizzle-orm"
+import { hashFormula } from "../utils/hash.js"
+import { redis } from "../redis.js"
 
 export const solveFormula = async (formula: Formula) => {
   const jobId = crypto.randomUUID()
+  const formulaHash = hashFormula(formula)
+
+  const cacheKey = `sat:result:${formulaHash}`
+  const cachedResult = await redis.get(cacheKey)
+
+  if (cachedResult) {
+    return {
+      cached: true,
+      result: JSON.parse(cachedResult),
+    }
+  }
 
   await db.insert(jobs).values({
     id: jobId,
     status: "queued",
     formula,
+    formulaHash,
   })
 
   const job = await satQueue.add(
@@ -29,6 +43,7 @@ export const solveFormula = async (formula: Formula) => {
   )
 
   return {
+    cached: false,
     jobId: job.id,
   }
 }

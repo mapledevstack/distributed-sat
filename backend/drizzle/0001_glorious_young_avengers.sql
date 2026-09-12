@@ -1,0 +1,1 @@
+ALTER TABLE "jobs" ADD COLUMN "formula_hash" text NOT NULL;

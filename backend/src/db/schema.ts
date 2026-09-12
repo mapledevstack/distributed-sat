@@ -7,6 +7,8 @@ export const jobs = pgTable("jobs", {
 
   formula: jsonb("formula").notNull(),
 
+  formulaHash: text("formula_hash").notNull(),
+
   result: jsonb("result"),
 
   error: text("error"),
