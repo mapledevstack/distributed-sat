@@ -55,3 +55,7 @@ export const tryAcquireSolveLock = async (
 
   return acquired !== null
 }
+
+export const releaseSolveLock = async (solveLockKey: string) => {
+  await redis.del(solveLockKey)
+}

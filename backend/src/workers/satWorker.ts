@@ -10,6 +10,7 @@ import {
   cacheSatSolution,
   cacheSatUnsatisfiable,
   hashAndBuildCacheKeys,
+  releaseSolveLock,
 } from "../utils/satCache.js"
 import {
   completeParentJobAsUnsatisfiable,
@@ -25,7 +26,9 @@ type SatChunkJob = Job<SatChunkJobData>
 
 const SAT_WORKER_CONCURRENCY = 2
 
-const processSatChunk = async (job: SatChunkJob): Promise<Assignment | null> => {
+const processSatChunk = async (
+  job: SatChunkJob,
+): Promise<Assignment | null> => {
   const { jobId: parentJobId, formula, start, end } = job.data
 
   logChunkStarted(job)
@@ -60,10 +63,11 @@ const publishSatisfyingAssignment = async (
   parentJobId: string,
   solution: Assignment,
 ): Promise<void> => {
-  const { resultCacheKey } = hashAndBuildCacheKeys(formula)
+  const { resultCacheKey, solveLockKey } = hashAndBuildCacheKeys(formula)
 
   await cacheSatSolution(resultCacheKey, solution)
   await completeParentJobWithSolution(parentJobId, solution)
+  await releaseSolveLock(solveLockKey)
 }
 
 const finalizeIfSearchExhausted = async (
@@ -75,10 +79,11 @@ const finalizeIfSearchExhausted = async (
     return
   }
 
-  const { resultCacheKey } = hashAndBuildCacheKeys(formula)
+  const { resultCacheKey, solveLockKey } = hashAndBuildCacheKeys(formula)
 
   await cacheSatUnsatisfiable(resultCacheKey)
   await completeParentJobAsUnsatisfiable(parentJobId)
+  await releaseSolveLock(solveLockKey)
 }
 
 const describeChunk = (job: Pick<SatChunkJob, "id" | "data">): string => {
@@ -112,4 +117,3 @@ worker.on("failed", (job, error) => {
 
   console.error("Job failed", error)
 })
-
